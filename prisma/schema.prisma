@@ -1,0 +1,295 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider     = "mysql"
+  url          = env("DATABASE_URL")
+  relationMode = "prisma"
+}
+
+enum ChainType {
+  ETHEREUM
+  SOLANA
+}
+
+enum KeyType {
+  PRIVATE
+  PUBLIC
+}
+
+enum PlatformType {
+  ZAP
+  X
+}
+
+enum UsageType {
+  DAY_TO_DAY
+  ROTATE
+}
+
+enum TransactionType {
+  BUY
+  SELL
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("account")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  has2fa Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_token")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  username      String?   @unique
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  created_at    DateTime  @default(now())
+
+  turnkey_organization_id String? @unique
+
+  ui_username String?
+
+  platform PlatformType @default(ZAP)
+
+  has2fa          Boolean @default(false)
+  hasRecoveryCode Boolean @default(false)
+
+  accounts                   Account[]
+  sessions                   Session[]
+  two_factor_authentications TwoFactorAuthentication[]
+
+  api_keys        ApiKey[] @relation("api_key_owner")
+  linked_api_keys ApiKey[] @relation("sub_org_owner")
+
+  wallet_addresses WalletAddress[]
+  trade_locks      TradeLock[]
+
+  sender_internal_transfers   InternalTransfer[]    @relation("sender_user")
+  receiver_internal_transfers InternalTransfer[]    @relation("receiver_user")
+  internal_transactions       InternalTransaction[]
+
+  daily_limits   DailyLimit[]
+  recovery_codes RecoveryCode[]
+
+  @@index([turnkey_organization_id])
+  @@map("user")
+}
+
+model TwoFactorAuthentication {
+  user    User   @relation(fields: [user_id], references: [id])
+  user_id String
+
+  secret String
+
+  is_active Boolean @default(false)
+
+  created_at DateTime @default(now())
+
+  @@unique([user_id, secret])
+  @@index([user_id])
+  @@map("two_factor_authentication")
+}
+
+model RecoveryCode {
+  user    User   @relation(fields: [user_id], references: [id])
+  user_id String
+
+  is_active Boolean @default(false)
+
+  code String
+
+  created_at DateTime @default(now())
+
+  @@unique([user_id, code])
+  @@index([user_id])
+  @@map("recovery_code")
+}
+
+model DailyLimit {
+  user    User   @relation(fields: [user_id], references: [id])
+  user_id String
+
+  platform PlatformType
+  chain    ChainType
+
+  amount BigInt
+
+  created_at DateTime @default(now())
+
+  @@unique([chain, platform, user_id])
+  @@index([user_id])
+  @@map("daily_limit")
+}
+
+model ApiKey {
+  public_key  String
+  private_key String
+
+  sub_org_owner    User   @relation("sub_org_owner", fields: [sub_org_owner_id], references: [id])
+  sub_org_owner_id String
+
+  api_key_owner    User   @relation("api_key_owner", fields: [api_key_owner_id], references: [id])
+  api_key_owner_id String
+
+  type     KeyType
+  platform PlatformType
+  usage    UsageType
+
+  created_at DateTime @default(now())
+
+  @@unique([api_key_owner_id, type, platform, usage])
+  @@index([api_key_owner_id])
+  @@index([sub_org_owner_id])
+  @@index([public_key])
+  @@map("api_key")
+}
+
+model WalletAddress {
+  chain   ChainType
+  address String
+
+  user    User   @relation(fields: [user_id], references: [id])
+  user_id String
+
+  created_at DateTime @default(now())
+
+  @@unique([chain, address])
+  @@index([user_id])
+  @@map("wallet_address")
+}
+
+model TradeLock {
+  platform PlatformType
+
+  user    User   @relation(fields: [user_id], references: [id])
+  user_id String
+
+  created_at DateTime @default(now())
+
+  @@unique([platform, user_id])
+  @@index([user_id])
+  @@map("trade_lock")
+}
+
+model CryptoToken {
+  chain    ChainType
+  address  String
+  decimals Int
+  logo_uri String?
+  symbol   String
+  name     String
+
+  internal_transfers    InternalTransfer[]
+  internal_transactions InternalTransaction[]
+
+  @@unique([chain, address])
+  @@index([address])
+  @@map("crypto_token")
+}
+
+model InternalTransfer {
+  hash     String       @id
+  chain    ChainType
+  platform PlatformType
+  amount   BigInt
+
+  crypto_token         CryptoToken @relation(fields: [chain, crypto_token_address], references: [chain, address])
+  crypto_token_address String
+
+  sender_user    User   @relation("sender_user", fields: [sender_user_id], references: [id])
+  sender_user_id String
+
+  receiver_user    User   @relation("receiver_user", fields: [receiver_user_id], references: [id])
+  receiver_user_id String
+
+  created_at DateTime @default(now())
+
+  @@index([chain, crypto_token_address])
+  @@index([crypto_token_address])
+  @@index([sender_user_id])
+  @@index([receiver_user_id])
+  @@map("internal_transfer")
+}
+
+model InternalTransaction {
+  hash     String          @id
+  chain    ChainType
+  platform PlatformType
+  type     TransactionType
+  amount   BigInt
+
+  user    User   @relation(fields: [user_id], references: [id])
+  user_id String
+
+  crypto_token         CryptoToken @relation(fields: [chain, crypto_token_address], references: [chain, address])
+  crypto_token_address String
+
+  created_at DateTime @default(now())
+
+  @@index([chain, crypto_token_address])
+  @@index([crypto_token_address])
+  @@index([user_id])
+  @@map("internal_transaction")
+}
+
+model XPost {
+  id         String   @unique
+  username   String
+  post_text  String   @db.Text
+  posted_at  DateTime
+  created_at DateTime @default(now())
+
+  @@index([username])
+  @@map("x_post")
+}
+
+model XPostTest {
+  id         String   @id @default(cuid())
+  username   String
+  post_text  String   @db.Text
+  created_at DateTime @default(now())
+
+  @@index([username])
+  @@map("x_post_test")
+}
