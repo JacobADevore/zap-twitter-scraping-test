@@ -2,7 +2,8 @@ export default function Home() {
   const createPost = async () => {
     "use server";
 
-    const access_token = "";
+    const access_token = [""];
+    const seconds_to_run = 30;
 
     try {
       const post_tweet = await (
